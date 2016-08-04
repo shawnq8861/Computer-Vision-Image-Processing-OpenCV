@@ -2,10 +2,12 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cstdio>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/imgcodecs/imgcodecs.hpp>
 #include <uEye.h>
 
 using namespace std;
@@ -40,11 +42,11 @@ Mat rightImageMat;      // the raw image data from the right camera
 Mat rightGrayMat;       // grayscale version of the right camera image
 Mat leftImageMat;       // the raw image data from the left camera
 Mat leftGrayMat;        // grayscale version of the left camera image
-const int vertShift = 28;
-//const int vertShift = 0;
+//const int vertShift = 28;
+const int vertShift = 0;
 const int horzShift = 0;
 const int vertLine = 550;
-Mat M = (Mat_<double>(2,3) << 1, 0, horzShift, 0, 1, vertShift);
+Mat rightImgWarpMat = (Mat_<double>(2,3) << 1, 0, horzShift, 0, 1, vertShift);
 vector<Point> rightHarrisCornerPts;
 vector<Point> leftHarrisCornerPts;
 vector<Point> rightCornerPts;
@@ -87,6 +89,8 @@ bool isCornersFound = false;
 bool isFindContours = false;
 bool isShowContours = false;
 bool isContoursFound = false;
+bool isSaveLeft = false;
+bool isSaveRight = false;
 Scalar blue = Scalar(255, 0, 0);
 Scalar green = Scalar(0, 255, 0);
 Scalar red = Scalar(0, 0, 255);
@@ -180,6 +184,26 @@ void on_left_exposure_change(int exposureVal, void *userVal)
     displayOverlay(right_image_win, exposureStr, 1000);
     is_Exposure(hCamLeft, IS_EXPOSURE_CMD_SET_EXPOSURE,
                         (void*)&exposureLeft, sizeof(exposureLeft));
+}
+
+void on_save_left_click(int buttonVal, void *userVal)
+{
+    if (buttonVal == 1) {
+    }
+    else if (buttonVal == 0) {
+        cout << "save left button clicked value = 0" << endl;
+        isSaveLeft = true;
+    }
+}
+
+void on_save_right_click(int buttonVal, void *userVal)
+{
+    if (buttonVal == 1) {
+    }
+    else if (buttonVal == 0) {
+        cout << "save right button clicked value = 0" << endl;
+        isSaveRight = true;
+    }
 }
 
 void configureCamera(HIDS hCam, char *imgMem, int memId)
@@ -285,20 +309,26 @@ int main(void)
 {
     cout << "Hello OpenCV and IDS ueye on Linux!" << endl;
 
+    //
     // configure cameras
+    //
     configureCamera(hCamRight, imgMemRight, memIdRight);
     configureCamera(hCamLeft, imgMemLeft, memIdLeft);
     // adjust the gain values for to balance right and left cameras
     is_SetHardwareGain(hCamRight, masterGain + 1, redGain, greenGain, blueGain);
     is_SetHardwareGain(hCamLeft, masterGain, redGain, greenGain, blueGain);
 
+    //
     // set the exposure time in msec
+    //
     is_Exposure(hCamRight, IS_EXPOSURE_CMD_SET_EXPOSURE,
                         (void*)&exposureRight, sizeof(exposureRight));
     is_Exposure(hCamLeft, IS_EXPOSURE_CMD_SET_EXPOSURE,
                         (void*)&exposureLeft, sizeof(exposureLeft));
 
+    //
     // create the image matrices and display windows
+    //
     rightImageMat = Mat(Size(img_width, img_height), CV_8UC3);
     rightGrayMat = Mat(Size(img_width, img_height), CV_8U);
     leftImageMat = Mat(Size(img_width, img_height), CV_8UC3);
@@ -310,6 +340,9 @@ int main(void)
     moveWindow(right_image_win, 985, 328);
     moveWindow(left_image_win, 0, 300);
 
+    //
+    // build up the utility control panel
+    //
     createButton("Threshold", on_threshold_click, NULL, CV_CHECKBOX, 0);
     createButton("Crosshairs", on_crosshairs_click, NULL, CV_CHECKBOX, 0);
     createButton("Corners", on_corners_click, NULL, CV_CHECKBOX, 0);
@@ -320,14 +353,20 @@ int main(void)
                    on_right_exposure_change, NULL);
     createTrackbar("Left Exposure", "", (int *)&exposureLeft, 98,
                    on_left_exposure_change, NULL);
+    createButton("Save Left Image", on_save_left_click, NULL, CV_PUSH_BUTTON, 0);
+    createButton("Save Right Image", on_save_right_click, NULL, CV_PUSH_BUTTON, 0);
 
+    //
     // link camera image buffers to OpenCV matrices
+    //
     is_GetImageMem(hCamRight, &pMemVoidRight);    // get pointer to the image buffer
     is_GetImageMem(hCamLeft, &pMemVoidLeft);    // get pointer to the image buffer
     rightImageMat.data = (uchar *)pMemVoidRight;   // assign the pointer to Matrix
     leftImageMat.data = (uchar *)pMemVoidLeft;   // assign the pointer to Matrix
 
+    //
     // start acquisition loop
+    //
     int waitRet = -1;
 
     dst_right = Mat::zeros( rightGrayMat.size(), CV_32FC1 );
@@ -341,7 +380,7 @@ int main(void)
             //
             // translate the right image vertically to align with the left image
             //
-            warpAffine(rightImageMat, rightImageMat, M, rightImageMat.size());
+            warpAffine(rightImageMat, rightImageMat, rightImgWarpMat, rightImageMat.size());
             //
             // convert to binary threshold and find box corners...
             //
@@ -361,7 +400,9 @@ int main(void)
                 cornerHarris( leftGrayMat, dst_left, blockSize,
                               apertureSize, k, BORDER_DEFAULT );
 
+                //
                 // Normalizing
+                //
                 normalize( dst_right, dst_right_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
                 normalize( dst_left, dst_left_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
                 convertScaleAbs( dst_right_norm, dst_right_norm_scaled );
@@ -541,6 +582,9 @@ int main(void)
                 isContoursFound = true;
             }
 
+            //
+            // post processing and display stuff follows
+            //
             else {
                 //
                 // Drawing a circle around corners and draw measurements
@@ -720,7 +764,7 @@ int main(void)
                     // calculate right tilt angle...
                     //
 
-                    int horizOffset = 300;
+                    int horizOffset = 500;
                     int rrY;
                     int rlY;
                     double rightAngle = findAngle(rightGrayMat, rCenter, horizOffset, rrY, rlY);
@@ -809,16 +853,16 @@ int main(void)
 
 
                     //
-                    // build up strings to display on right side
+                    // build up strings to display
                     //
                     //
                     // calculations and display for the 4 arguments passed
                     // to the Python script
                     //
-                    // arg1 == right shift vertical = .5 * (rCenter.y - lCenter.y)
-                    // arg2 == right shift horizontal = rCenter.x - img_width/2
-                    // arg3 == left shift vertical = .5 * (lCenter.y - rCenter.y)
-                    // arg4 == left shift horizontal = lCenter.x - img_width/2
+                    // arg1 == left shift vertical = .5 * (rCenter.y - lCenter.y)
+                    // arg2 == left shift horizontal = rCenter.x - img_width/2
+                    // arg3 == right shift vertical = .5 * (lCenter.y - rCenter.y)
+                    // arg4 == right shift horizontal = lCenter.x - img_width/2
                     //
                     double rShiftVert = .5 * ((double)rCenter.y -
                                               (double)lCenter.y) / scaleFactor;
@@ -857,49 +901,49 @@ int main(void)
                     lHorizStr.append(lShiftHorizStr);
 
                     //
-                    // display the strings near the crosshair on right side
+                    // display the strings near the crosshair on left side
                     //
                     if (rCenterDistX > 0) {
-                        putText(rightImageMat, rVertStr,
+                        putText(leftImageMat, rVertStr,
                                 Point(rCenter.x, rCenter.y -25), FONT_HERSHEY_SIMPLEX,
                                 textFontSize, red, lineWidth);
                     }
                     else {
-                        putText(rightImageMat, rVertStr,
+                        putText(leftImageMat, rVertStr,
                                 Point(rCenter.x, rCenter.y -25), FONT_HERSHEY_SIMPLEX,
                                 textFontSize, red, lineWidth);
                     }
                     if (rCenterDistY > 0) {
-                        putText(rightImageMat, rHorizStr,
+                        putText(leftImageMat, rHorizStr,
                                 Point(rCenter.x, rCenter.y -60), FONT_HERSHEY_SIMPLEX,
                                 textFontSize, red, lineWidth);
                     }
                     else {
-                        putText(rightImageMat, rHorizStr,
+                        putText(leftImageMat, rHorizStr,
                                 Point(rCenter.x, rCenter.y +45),
                                 FONT_HERSHEY_SIMPLEX, textFontSize, red, lineWidth);
                     }
 
                     //
-                    // display the strings near the crosshair on left side
+                    // display the strings near the crosshair on right side
                     //
                     if (lCenterDistX > 0) {
-                        putText(leftImageMat, lVertStr,
+                        putText(rightImageMat, lVertStr,
                                 Point(lCenter.x, lCenter.y -25), FONT_HERSHEY_SIMPLEX,
                                 textFontSize, red, lineWidth);
                     }
                     else {
-                        putText(leftImageMat, lVertStr,
+                        putText(rightImageMat, lVertStr,
                                 Point(lCenter.x, lCenter.y -25), FONT_HERSHEY_SIMPLEX,
                                 textFontSize, red, lineWidth);
                     }
                     if (lCenterDistY > 0) {
-                        putText(leftImageMat, lHorizStr,
+                        putText(rightImageMat, lHorizStr,
                                 Point(lCenter.x, lCenter.y -60), FONT_HERSHEY_SIMPLEX,
                                 textFontSize, red, lineWidth);
                     }
                     else {
-                        putText(leftImageMat, lHorizStr,
+                        putText(rightImageMat, lHorizStr,
                                 Point(lCenter.x, lCenter.y +45),
                                 FONT_HERSHEY_SIMPLEX, textFontSize, red, lineWidth);
                     }
@@ -950,12 +994,111 @@ int main(void)
                     line(leftImageMat, ptCTop, ptCBot, green, lineWidth);
                 }
                 //
+                // save right image buffer
+                //
+                if (isSaveRight) {
+                    //
+                    // get date and time
+                    //
+                    time_t rawtime;
+                    time (&rawtime);
+                    string currentTime = ctime(&rawtime);
+                    cout <<"The current local time is: " << currentTime << endl;
+                    size_t found = currentTime.find(" ");
+                    while (found != string::npos) {
+                        currentTime.erase(found, 1);
+                        found = currentTime.find(" ");
+                    }
+                    //
+                    // remove last character
+                    //
+                    currentTime.erase(currentTime.length() - 1, 1);
+                    cout <<"The current local time is: " << currentTime << endl;
+                    //
+                    // build file name
+                    //
+                    string fileName("rightCameraImage_");
+                    fileName.append(currentTime);
+                    fileName.append(".jpg");
+                    cout << fileName << endl;
+                    //
+                    // build file path
+                    //
+                    string filePath = getenv("HOME");
+                    filePath.append("/Pictures/");
+                    filePath.append(fileName);
+                    //
+                    // buld up jpeg image data and write to file
+                    //
+                    vector<int> compression_params;
+                    compression_params.push_back(CV_IMWRITE_JPEG_QUALITY);
+                    compression_params.push_back(95);
+                    try {
+                        imwrite(filePath, rightImageMat, compression_params);
+                        cout << "saving right image to file" << endl;
+                    }
+                    catch (Exception& ex) {
+                        fprintf(stderr, "Exception converting image to JPG format: %s\n", ex.what());
+                        return 1;
+                    }
+                    isSaveRight = false;
+                }
+                //
+                // save left image buffer
+                //
+                if (isSaveLeft) {
+                    //
+                    // get date and time
+                    //
+                    time_t rawtime;
+                    time (&rawtime);
+                    string currentTime = ctime(&rawtime);
+                    cout <<"The current local time is: " << currentTime << endl;
+                    size_t found = currentTime.find(" ");
+                    while (found != string::npos) {
+                        currentTime.erase(found, 1);
+                        found = currentTime.find(" ");
+                    }
+                    //
+                    // remove last character
+                    //
+                    currentTime.erase(currentTime.length() - 1, 1);
+                    cout <<"The current local time is: " << currentTime << endl;
+                    //
+                    // build file name
+                    //
+                    string fileName("leftCameraImage_");
+                    fileName.append(currentTime);
+                    fileName.append(".jpg");
+                    cout << fileName << endl;
+                    //
+                    // build file path
+                    //
+                    string filePath = getenv("HOME");
+                    filePath.append("/Pictures/");
+                    filePath.append(fileName);
+                    //
+                    // buld up jpeg image data and write to file
+                    //
+                    vector<int> compression_params;
+                    compression_params.push_back(CV_IMWRITE_JPEG_QUALITY);
+                    compression_params.push_back(95);
+                    try {
+                        imwrite(filePath, leftImageMat, compression_params);
+                        cout << "saving left image to file" << endl;
+                    }
+                    catch (Exception& ex) {
+                        fprintf(stderr, "Exception converting image to JPG format: %s\n", ex.what());
+                        return 1;
+                    }
+                    isSaveLeft = false;
+                }
+                //
                 // all done processing
                 // display images in windows
                 //
                 imshow(right_image_win, rightImageMat);
                 imshow(left_image_win, leftImageMat);
-
             }
         }
         //

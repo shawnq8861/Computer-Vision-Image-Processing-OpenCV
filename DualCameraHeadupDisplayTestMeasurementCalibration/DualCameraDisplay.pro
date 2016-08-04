@@ -10,6 +10,7 @@ unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/openCV31Build/lib/ -lopencv_c
 unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/openCV31Build/lib/ -lopencv_highgui
 unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/openCV31Build/lib/ -lopencv_imgproc
 unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/openCV31Build/lib/ -lopencv_calib3d
+unix:!macx: LIBS += -L$$PWD/../../../../../usr/lib/openCV31Build/lib/ -lopencv_imgcodecs
 
 INCLUDEPATH += $$PWD/../../../../../usr/lib/openCV31Build/include
 DEPENDPATH += $$PWD/../../../../../usr/lib/openCV31Build/include
